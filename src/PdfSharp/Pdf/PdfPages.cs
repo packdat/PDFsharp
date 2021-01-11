@@ -200,6 +200,9 @@ namespace PdfSharp.Pdf
 
                 PagesArray.Elements.Insert(index, page.Reference);
                 Elements.SetInteger(Keys.Count, PagesArray.Elements.Count);
+
+                // Import AcroFields, after the external Page has been imported and we have a valid ObjectID for the imported Page
+                ImportAcroFields(page, importPage);
                 PdfAnnotations.FixImportedAnnotation(page);
 
                 // @PDF/UA: Page was imported.
