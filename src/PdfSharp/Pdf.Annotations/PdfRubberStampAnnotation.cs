@@ -55,6 +55,17 @@ namespace PdfSharp.Pdf.Annotations
             Initialize();
         }
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="PdfRubberStampAnnotation"/> with the specified dictionary.
+        /// </summary>
+        /// <param name="dict"></param>
+        public PdfRubberStampAnnotation(PdfDictionary dict)
+            : base(dict)
+        {
+            if (dict.Elements.GetString(PdfAnnotation.Keys.Subtype) != "/Stamp")
+                throw new PdfSharpException("PdfRubberStampAnnotation not initialized with the /Stamp Subtype");
+        }
+
         void Initialize()
         {
             Elements.SetName(Keys.Subtype, "/Stamp");

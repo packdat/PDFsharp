@@ -1,5 +1,5 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<Project ToolsVersion="4.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+<Project ToolsVersion="12.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
@@ -9,7 +9,7 @@
     <AppDesignerFolder>Properties</AppDesignerFolder>
     <RootNamespace>PdfSharp</RootNamespace>
     <AssemblyName>PdfSharp</AssemblyName>
-    <TargetFrameworkVersion>v3.5</TargetFrameworkVersion>
+    <TargetFrameworkVersion>v4.6.1</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <SccProjectName>SAK</SccProjectName>
     <SccLocalPath>SAK</SccLocalPath>
@@ -198,6 +198,7 @@
     <Compile Include="Internal\NativeMethods.cs" />
     <Compile Include="Internal\TokenizerHelper.cs" />
     <Compile Include="Pdf.AcroForms\enums\PdfAcroFieldFlags.cs" />
+    <Compile Include="Pdf.AcroForms\enums\TextAlignment.cs" />
     <Compile Include="Pdf.AcroForms\PdfAcroField.cs" />
     <Compile Include="Pdf.AcroForms\PdfAcroForm.cs" />
     <Compile Include="Pdf.AcroForms\PdfButtonField.cs" />
@@ -308,12 +309,17 @@
     <Compile Include="Pdf.IO\PdfWriter.cs" />
     <Compile Include="Pdf.IO\ShiftStack.cs" />
     <Compile Include="Pdf.Printing\PdfFilePrinter.cs" />
+    <Compile Include="Pdf.Security\AESEncryptor.cs" />
+    <Compile Include="Pdf.Security\EncryptorBase.cs" />
+    <Compile Include="Pdf.Security\EncryptorFactory.cs" />
     <Compile Include="Pdf.Security\enums\PdfDocumentSecurity.cs" />
     <Compile Include="Pdf.Security\enums\PdfUserAccessPermission.cs" />
+    <Compile Include="Pdf.Security\IEncryptor.cs" />
     <Compile Include="Pdf.Security\MD5Managed.cs" />
     <Compile Include="Pdf.Security\PdfSecurityHandler.cs" />
     <Compile Include="Pdf.Security\PdfSecuritySettings.cs" />
     <Compile Include="Pdf.Security\PdfStandardSecurityHandler.cs" />
+    <Compile Include="Pdf.Security\RC4Encryptor.cs" />
     <Compile Include="Pdf.Structure\PdfAttributesBase.cs" />
     <Compile Include="Pdf.Structure\PdfLayoutAttributes.cs" />
     <Compile Include="Pdf.Structure\PdfObjectReference.cs" />

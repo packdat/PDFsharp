@@ -65,6 +65,17 @@ namespace PdfSharp.Pdf.Annotations
         }
 
         /// <summary>
+        /// Initializes a new instance of the <see cref="PdfLinkAnnotation"/> with the specified dictionary.
+        /// </summary>
+        /// <param name="dict"></param>
+        public PdfLinkAnnotation(PdfDictionary dict)
+            : base(dict)
+        {
+            if (dict.Elements.GetString(PdfAnnotation.Keys.Subtype) != "/Link")
+                throw new PdfSharpException("PdfLinkAnnotation not initialized with the /Link Subtype");
+        }
+
+        /// <summary>
         /// Creates a link within the current document.
         /// </summary>
         /// <param name="rect">The link area in default page coordinates.</param>

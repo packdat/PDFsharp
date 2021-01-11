@@ -27,6 +27,9 @@
 // DEALINGS IN THE SOFTWARE.
 #endregion
 
+using PdfSharp.Pdf.Annotations;
+using System;
+
 namespace PdfSharp.Pdf.AcroForms
 {
     /// <summary>
@@ -44,6 +47,24 @@ namespace PdfSharp.Pdf.AcroForms
         internal PdfGenericField(PdfDictionary dict)
             : base(dict)
         { }
+
+        internal override void Flatten()
+        {
+            base.Flatten();
+
+            for (var i = 0; i < Annotations.Elements.Count; i++)
+            {
+                var widget = Annotations.Elements[i];
+                if (widget.Page != null)
+                {
+                    var appearances = widget.Elements.GetDictionary(PdfAnnotation.Keys.AP);
+                    var normalAppearance = appearances != null ? appearances.Elements.GetDictionary("/N") : null;
+                    var activeAppearance = widget.Elements.GetString(PdfAnnotation.Keys.AS);
+                    if (!String.IsNullOrEmpty(activeAppearance) && normalAppearance != null && normalAppearance.Elements.ContainsKey(activeAppearance))
+                        RenderContentStream(widget.Page, normalAppearance.Elements.GetDictionary(activeAppearance).Stream, widget.Rectangle);
+                }
+            }
+        }
 
         /// <summary>
         /// Predefined keys of this dictionary. 

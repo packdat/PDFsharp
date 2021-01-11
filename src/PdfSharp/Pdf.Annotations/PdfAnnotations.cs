@@ -120,7 +120,16 @@ namespace PdfSharp.Pdf.Annotations
                 PdfAnnotation annotation = dict as PdfAnnotation;
                 if (annotation == null)
                 {
-                    annotation = new PdfGenericAnnotation(dict);
+                    if (dict.Elements.GetString(PdfAnnotation.Keys.Subtype) == "/Widget")
+                        annotation = new PdfWidgetAnnotation(dict);
+                    else if (dict.Elements.GetString(PdfAnnotation.Keys.Subtype) == "/Link")
+                        annotation = new PdfLinkAnnotation(dict);
+                    else if (dict.Elements.GetString(PdfAnnotation.Keys.Subtype) == "/Stamp")
+                        annotation = new PdfRubberStampAnnotation(dict);
+                    else if (dict.Elements.GetString(PdfAnnotation.Keys.Subtype) == "/Text")
+                        annotation = new PdfTextAnnotation(dict);
+                    else
+                        annotation = new PdfGenericAnnotation(dict);
                     if (iref == null)
                         Elements[index] = annotation;
                 }

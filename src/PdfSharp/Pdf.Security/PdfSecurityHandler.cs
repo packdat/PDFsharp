@@ -101,6 +101,12 @@ namespace PdfSharp.Pdf.Security
             public const string CF = "/CF";
 
             /// <summary>
+            /// (Optional)The method used, if any, by the conforming reader to decrypt data.
+            /// </summary>
+            [KeyInfo("1.5", KeyType.Name | KeyType.Optional)]
+            public const string CFM = "/CFM";
+
+            /// <summary>
             /// (Optional; meaningful only when the value of V is 4; PDF 1.5)
             /// The name of the crypt filter that is used by default when decrypting streams.
             /// The name must be a key in the CF dictionary or a standard crypt filter name. All streams

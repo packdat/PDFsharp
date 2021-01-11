@@ -49,5 +49,14 @@ namespace PdfSharp.Pdf.Security
         /// Document is protected with 128-bit security.
         /// </summary>
         Encrypted128Bit,
+
+        /// <summary>
+        /// Document is protected with 256-bit AES security.
+        /// </summary>
+        /// <remarks>
+        /// This is the Encryption introduced in Acrobat X (version 5, revision 6).
+        /// There is also a revision 5 encryption, but as Adobe itself has scrapped this, we won't support it either for new documents.
+        /// </remarks>
+        EncryptedAES256
     }
 }

@@ -35,6 +35,7 @@ using PdfSharp.Events;
 using PdfSharp.Pdf.IO;
 using PdfSharp.Pdf.Advanced;
 using PdfSharp.Pdf.Annotations;
+using PdfSharp.Pdf.AcroForms;
 
 namespace PdfSharp.Pdf
 {
@@ -530,6 +531,239 @@ namespace PdfSharp.Pdf
                     page.Elements[key] = item.Clone();
                 }
             }
+        }
+
+        void ImportAcroFields(PdfPage page, PdfPage importPage)
+        {
+            // Note: technically, we need to do this only once per document, but as we have no knowledge when the last page was imported, we do this for every page
+            var importedObjectTable = Owner.FormTable.GetImportedObjectTable(importPage);
+            // skip, if there is no AcroForm or an AcroForm without fields
+            if (importPage.Owner.AcroForm == null || importPage.Owner.AcroForm.Fields.Names.Length == 0)
+                return;
+            var needNewForm = _document.Catalog.AcroForm == null;
+            var ourForm = _document.Catalog.AcroForm ?? new PdfAcroForm(_document);
+            if (needNewForm)
+            {
+                var remoteForm = importPage.Owner.AcroForm;
+                if (remoteForm.Elements.ContainsKey(PdfAcroForm.Keys.CO))
+                    ourForm.Elements[PdfAcroForm.Keys.CO] = ImportClosure(importedObjectTable, _document, remoteForm.Elements.GetObject(PdfAcroForm.Keys.CO));
+                if (remoteForm.Elements.ContainsKey(PdfAcroForm.Keys.DA))
+                    ourForm.Elements[PdfAcroForm.Keys.DA] = remoteForm.Elements[PdfAcroForm.Keys.DA];
+                if (remoteForm.Elements.ContainsKey(PdfAcroForm.Keys.DR))
+                    ourForm.Elements[PdfAcroForm.Keys.DR] = ImportClosure(importedObjectTable, _document, remoteForm.Elements.GetObject(PdfAcroForm.Keys.DR));
+                if (remoteForm.Elements.ContainsKey(PdfAcroForm.Keys.NeedAppearances))
+                    ourForm.Elements[PdfAcroForm.Keys.NeedAppearances] = remoteForm.Elements[PdfAcroForm.Keys.NeedAppearances];
+                if (remoteForm.Elements.ContainsKey(PdfAcroForm.Keys.Q))
+                    ourForm.Elements[PdfAcroForm.Keys.Q] = remoteForm.Elements[PdfAcroForm.Keys.Q];
+                if (remoteForm.Elements.ContainsKey(PdfAcroForm.Keys.SigFlags))
+                    ourForm.Elements[PdfAcroForm.Keys.SigFlags] = remoteForm.Elements[PdfAcroForm.Keys.SigFlags];
+            }
+            // copy font-resources from the imported AcroForm to the local form
+            var extResources = importPage.Owner.AcroForm.Elements.GetDictionary(PdfAcroForm.Keys.DR);
+            if (extResources != null)
+            {
+                var extFontList = extResources.Elements.GetDictionary(PdfResources.Keys.Font);
+                if (extFontList != null)
+                {
+                    var localResources = ourForm.Elements.GetDictionary(PdfAcroForm.Keys.DR) ?? new PdfDictionary(Owner);
+                    var localFontList = localResources.Elements.GetDictionary(PdfResources.Keys.Font) ?? new PdfDictionary(Owner);
+                    foreach (var key in extFontList.Elements.Keys)
+                    {
+                        if (!localFontList.Elements.ContainsKey(key))
+                            localFontList.Elements.Add(key, ImportClosure(importedObjectTable, Owner, extFontList.Elements.GetObject(key)));
+                    }
+                    if (!localResources.Elements.ContainsKey(PdfResources.Keys.Font))
+                        localResources.Elements.Add(PdfResources.Keys.Font, localFontList);
+                    if (!ourForm.Elements.ContainsKey(PdfAcroForm.Keys.DR))
+                        ourForm.Elements.Add(PdfAcroForm.Keys.DR, localResources);
+                }
+            }
+
+            for (var f = 0; f < importPage.Owner.AcroForm.Fields.Elements.Count; f++)
+            {
+                var fieldObj = importPage.Owner.AcroForm.Fields[f];
+                ImportAcroField(page, importPage, ourForm, importedObjectTable, fieldObj, false);
+            }
+
+            if (_document.AcroForm == null)
+            {
+                _document._irefTable.Add(ourForm);
+                _document.Catalog.AcroForm = ourForm;
+            }
+        }
+
+        /// <summary>
+        /// Fixes page-references of imported Acro-Fields
+        /// </summary>
+        public void FixupAcroFields()
+        {
+            if (Owner.PageCount == 0 || Owner.AcroForm == null)
+                return;
+
+            foreach (var importTable in Owner.FormTable.ImportTables)
+            {
+                FixAcroFields(Owner.AcroForm.Fields, importTable);
+            }
+        }
+
+        private void FixAcroFields(PdfAcroField.PdfAcroFieldCollection formFields, PdfImportedObjectTable importedObjectTable)
+        {
+            for (var i = 0; i < formFields.Elements.Count; i++)
+            {
+                var field = formFields[i];
+                if (field.Owner != _document)
+                    field._document = _document;
+                field.Reference.Document = _document;
+                if (field.ObjectID.IsEmpty || !_document._irefTable.Contains(field.ObjectID))
+                    _document._irefTable.Add(field);
+                //// fix the /P entry for Field-Annotations
+                //var fieldPage = field.Elements.GetDictionary(PdfAcroField.Keys.Page);
+                //if (fieldPage != null && fieldPage.Owner != _document)
+                //{
+                //    var importedPage = importedObjectTable.Contains(fieldPage.ObjectID) ? importedObjectTable[fieldPage.ObjectID] : null;
+                //    if (importedPage != null)
+                //    {
+                //        field.Elements.SetReference(PdfAcroField.Keys.Page, importedPage.Value);
+                //        Debug.WriteLine(String.Format("Fixed page of '{0}' ({1}) -> {2} = {3}", field.FullyQualifiedName, field.ObjectID, fieldPage.ObjectID, importedPage.ObjectID));
+                //    }
+                //    else
+                //        Debug.WriteLine(String.Format("Can't fix page of '{0}' ({1}), imported page not found", field.FullyQualifiedName, field.ObjectID));
+                //}
+                // Annotations are "partly" imported, we need to fix the /P entry
+                for (var a = 0; a < field.Annotations.Elements.Count; a++)
+                {
+                    var widget = field.Annotations.Elements[a];
+                    if (widget != null)
+                    {
+                        // the owner has to be fixed as well...
+                        // Note: it was observed that some objects referenced by the widget were still owned by the imported document, but that seems to be fixed on saving...
+                        if (widget.Owner != _document)
+                        {
+                            if (_document._irefTable.Contains(widget.ObjectID))
+                            {
+                                widget._document = _document;
+                                widget.Reference.Document = _document;
+                                if (!_document._irefTable.Contains(widget.ObjectID))
+                                    _document._irefTable.Add(widget);
+                            }
+                            else
+                            {
+                                // this was never needed during debugging, we leave it here just in case...
+                                var importedWidget = ImportClosure(importedObjectTable, _document, widget) as PdfDictionary;
+                                if (importedWidget != null)
+                                    widget = new PdfWidgetAnnotation(importedWidget);
+                            }
+                            FixDocumentRef(widget, importedObjectTable);
+                        }
+                        var widgetPage = widget.Page;
+                        if (widgetPage != null && widgetPage.Owner != _document)
+                        {
+                            var importedPage = importedObjectTable.Contains(widgetPage.ObjectID) ? importedObjectTable[widgetPage.ObjectID] : null;
+                            if (importedPage != null)
+                            {
+                                widget.Elements.SetReference(PdfAnnotation.Keys.Page, importedPage.Value);
+                                Debug.WriteLine(String.Format("Fixed page of Widget '{0}' ({1}) -> {2} = {3}", field.FullyQualifiedName, field.ObjectID, widgetPage.ObjectID, importedPage.ObjectID));
+                                var ip = importedPage.Value as PdfPage;
+                                // the widget is a PdfWidgetAnnotation, but the "real" object may be something else (e.g. a PdfGenericField), so we check the referenced object instead
+                                if (ip != null && !ip.Annotations.Elements.Contains(widget.Reference))
+                                    ip.Annotations.Elements.Add(widget.Reference.Value);
+                            }
+                        }
+                        else if (widgetPage is PdfPage)
+                        {
+                            // add widget to the pages' annotations if not already present
+                            if (!((PdfPage)widgetPage).Annotations.Elements.Contains(widget.Reference))
+                                ((PdfPage)widgetPage).Annotations.Elements.Add(widget);
+                        }
+                    }
+                }
+                if (field.HasKids)
+                    FixAcroFields(field.Fields, importedObjectTable);
+            }
+        }
+
+        private PdfReference FixDocumentRef(PdfItem objItem, PdfImportedObjectTable importedObjectTable)
+        {
+            if (objItem == null)
+                return null;
+            var obj = objItem as PdfObject;
+            if (obj != null)
+                obj._document = _document;
+            var dict = obj as PdfDictionary;
+            if (dict != null)
+            {
+                foreach (var key in dict.Elements.KeyNames)
+                {
+                    var r = FixDocumentRef(dict.Elements[key], importedObjectTable);
+                    if (r != null)
+                        dict.Elements.SetReference(key.Value, r.Value);
+                }
+            }
+            var array = obj as PdfArray;
+            if (array != null)
+            {
+                for (var i = 0; i < array.Elements.Count; i++)
+                {
+                    var r = FixDocumentRef(array.Elements[i], importedObjectTable);
+                    if (r != null)
+                        array.Elements[i] = r;
+                }
+            }
+            var reference = objItem as PdfReference;
+            if (reference != null && reference.Document != _document)
+            {
+                if (importedObjectTable.Contains(reference.ObjectID))
+                    return importedObjectTable[reference.ObjectID];
+                var value = ImportClosure(importedObjectTable, _document, reference.Value);
+                Debug.Assert(value.Reference != null);
+                return value.Reference;
+            }
+            return null;
+        }
+
+        private void ImportAcroField(PdfPage page, PdfPage importPage, PdfAcroForm localForm, PdfImportedObjectTable importedObjectTable, PdfAcroField fieldObj, bool isChild)
+        {
+            if (fieldObj != null)
+            {
+                PdfDictionary importedObject;
+                if (!importedObjectTable.Contains(fieldObj.ObjectID))
+                {
+                    // Do not use PdfObject.DeepCopyClosure as that would also create new Pages when encountering the "/P" Entry  !
+                    importedObject = ImportClosure(importedObjectTable, _document, fieldObj) as PdfDictionary;
+                }
+                else
+                    importedObject = importedObjectTable[fieldObj.ObjectID].Value as PdfDictionary;
+                Debug.Assert(importedObject != null, "Imported AcroField is null");
+                if (importedObject != null)
+                {
+                    var name = importedObject is PdfAcroField ? ((PdfAcroField)importedObject).FullyQualifiedName : "NoName";
+                    Debug.WriteLine(String.Format("Importing {0} '{1}' ({2})", importedObject.GetType().Name, name, importedObject.ObjectID));
+                    if (importedObject.Elements.ContainsKey("/P"))
+                    {
+                        var fieldPage = importedObject.Elements.GetObject(PdfAnnotation.Keys.Page);
+#if !DEBUG
+                      if (!_document._irefTable.Contains(fieldPage.ObjectID))
+                          throw new PdfSharpException("Error importing Field: Page of imported field should exist in current document. Please report this error along with the document you're working with.");
+#endif
+                        Debug.Assert(_document._irefTable.Contains(fieldPage.ObjectID), "Page of imported field should exist in current document");
+                    }
+                    if (!isChild && !IsInArray(localForm.Fields, importedObject))
+                        localForm.Fields.Elements.Add(importedObject);
+                }
+            }
+        }
+
+        private static bool IsInArray(PdfArray array, PdfObject obj)
+        {
+            for (var i = 0; i < array.Elements.Count; i++)
+            {
+                var ao = array.Elements.GetObject(i);
+                if (obj.IsIndirect)
+                    obj = obj.Reference.Value;
+                if (ReferenceEquals(ao, obj))
+                    return true;
+            }
+            return false;
         }
 
         static PdfReference RemapReference(PdfPage[] newPages, PdfPage[] impPages, PdfReference iref)

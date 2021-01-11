@@ -62,8 +62,11 @@ namespace PdfSharp.Pdf.Advanced
 
             // Create ToUnicode map
             _toUnicode = new PdfToUnicodeMap(document, _cmapInfo);
-            document.Internals.AddObject(_toUnicode);
-            Elements.Add(Keys.ToUnicode, _toUnicode);
+            if (!font.FromDocument)
+            {
+                document.Internals.AddObject(_toUnicode);
+                Elements.Add(Keys.ToUnicode, _toUnicode);
+            }
 
             BaseFont = font.GlyphTypeface.GetBaseName();
             // CID fonts are always embedded
@@ -73,9 +76,12 @@ namespace PdfSharp.Pdf.Advanced
             _descendantFont.BaseFont = BaseFont;
 
             PdfArray descendantFonts = new PdfArray(document);
-            Owner._irefTable.Add(_descendantFont);
-            descendantFonts.Elements.Add(_descendantFont.Reference);
-            Elements[Keys.DescendantFonts] = descendantFonts;
+            if (!font.FromDocument)
+            {
+                Owner._irefTable.Add(_descendantFont);
+                descendantFonts.Elements.Add(_descendantFont.Reference);
+                Elements[Keys.DescendantFonts] = descendantFonts;
+            }
         }
 
         public PdfType0Font(PdfDocument document, string idName, byte[] fontData, bool vertical)

@@ -57,8 +57,11 @@ namespace PdfSharp.Pdf.Advanced
 
             FontDescriptor = fontDescriptor;
             // ReSharper disable once DoNotCallOverridableMethodsInConstructor
-            Owner._irefTable.Add(fontDescriptor);
-            Elements[Keys.FontDescriptor] = fontDescriptor.Reference;
+            if (!font.FromDocument)
+            {
+                Owner._irefTable.Add(fontDescriptor);
+                Elements[Keys.FontDescriptor] = fontDescriptor.Reference;
+            }
 
             FontEncoding = font.PdfOptions.FontEncoding;
         }

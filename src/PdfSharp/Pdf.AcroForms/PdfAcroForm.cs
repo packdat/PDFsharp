@@ -65,6 +65,32 @@ namespace PdfSharp.Pdf.AcroForms
         }
         PdfAcroField.PdfAcroFieldCollection _fields;
 
+        internal override void PrepareForSave()
+        {
+            // Need to create "Fields" Entry after importing fields from external documents
+            if (_fields != null && _fields.Elements.Count > 0 && !Elements.ContainsKey(Keys.Fields))
+            {
+                Elements.Add(Keys.Fields, _fields);
+            }
+            base.PrepareForSave();
+        }
+
+        /// <summary>
+        /// Flattens the AcroForm by rendering Field-contents directly onto the page
+        /// </summary>
+        public void Flatten()
+        {
+            // in case we imported pages, we might need to fix page-references in the fields
+            _document.FinishPageImport();
+
+            for (var i = 0; i < Fields.Elements.Count; i++)
+            {
+                var field = Fields[i];
+                field.Flatten();
+            }
+            _document.Catalog.AcroForm = null;
+        }
+
         /// <summary>
         /// Predefined keys of this dictionary. 
         /// The description comes from PDF 1.4 Reference.

@@ -28,9 +28,11 @@
 #endregion
 
 using PdfSharp.Drawing;
+using PdfSharp.Drawing.Layout;
 using PdfSharp.Pdf.Advanced;
 using PdfSharp.Pdf.Annotations;
 using PdfSharp.Pdf.Internal;
+using System;
 
 namespace PdfSharp.Pdf.AcroForms
 {
@@ -56,38 +58,8 @@ namespace PdfSharp.Pdf.AcroForms
         public string Text
         {
             get { return Elements.GetString(Keys.V); }
-            set { Elements.SetString(Keys.V, value); RenderAppearance(); } //HACK in PdfTextField
+            set { Elements.SetString(Keys.V, value); }
         }
-
-        /// <summary>
-        /// Gets or sets the font used to draw the text of the field.
-        /// </summary>
-        public XFont Font
-        {
-            get { return _font; }
-            set { _font = value; }
-        }
-        XFont _font = new XFont("Courier New", 10);
-
-        /// <summary>
-        /// Gets or sets the foreground color of the field.
-        /// </summary>
-        public XColor ForeColor
-        {
-            get { return _foreColor; }
-            set { _foreColor = value; }
-        }
-        XColor _foreColor = XColors.Black;
-
-        /// <summary>
-        /// Gets or sets the background color of the field.
-        /// </summary>
-        public XColor BackColor
-        {
-            get { return _backColor; }
-            set { _backColor = value; }
-        }
-        XColor _backColor = XColor.Empty;
 
         /// <summary>
         /// Gets or sets the maximum length of the field.
@@ -130,150 +102,190 @@ namespace PdfSharp.Pdf.AcroForms
         }
 
         /// <summary>
+        /// Gets or sets a value indicating whether this field is a combined field.
+        /// A combined field is a text field made up of multiple "combs" of equal width. The number of combs is determined by <see cref="MaxLength"/>.
+        /// </summary>
+        public bool Combined
+        {
+            get { return (Flags & PdfAcroFieldFlags.Comb) != 0; }
+            set
+            {
+                if (value)
+                    SetFlags |= PdfAcroFieldFlags.Comb;
+                else
+                    SetFlags &= ~PdfAcroFieldFlags.Comb;
+            }
+        }
+
+        /// <summary>
         /// Creates the normal appearance form X object for the annotation that represents
         /// this acro form text field.
         /// </summary>
-        void RenderAppearance()
+        private void RenderAppearance()
         {
-#if true_
-            PdfFormXObject xobj = new PdfFormXObject(Owner);
-            Owner.Internals.AddObject(xobj);
-            xobj.Elements["/BBox"] = new PdfLiteral("[0 0 122.653 12.707]");
-            xobj.Elements["/FormType"] = new PdfLiteral("1");
-            xobj.Elements["/Matrix"] = new PdfLiteral("[1 0 0 1 0 0]");
-            PdfDictionary res = new PdfDictionary(Owner);
-            xobj.Elements["/Resources"] = res;
-            res.Elements["/Font"] = new PdfLiteral("<< /Helv 28 0 R >> /ProcSet [/PDF /Text]");
-            xobj.Elements["/Subtype"] = new PdfLiteral("/Form");
-            xobj.Elements["/Type"] = new PdfLiteral("/XObject");
-
-            string s =
-              "/Tx BMC " + '\n' +
-              "q" + '\n' +
-              "1 1 120.653 10.707 re" + '\n' +
-              "W" + '\n' +
-              "n" + '\n' +
-              "BT" + '\n' +
-              "/Helv 7.93 Tf" + '\n' +
-              "0 g" + '\n' +
-              "2 3.412 Td" + '\n' +
-              "(Hello ) Tj" + '\n' +
-              "20.256 0 Td" + '\n' +
-              "(XXX) Tj" + '\n' +
-              "ET" + '\n' +
-              "Q" + '\n' +
-              "";//"EMC";
-            int length = s.Length;
-            byte[] stream = new byte[length];
-            for (int idx = 0; idx < length; idx++)
-                stream[idx] = (byte)s[idx];
-            xobj.CreateStream(stream);
-
-            // Get existing or create new appearance dictionary
-            PdfDictionary ap = Elements[PdfAnnotation.Keys.AP] as PdfDictionary;
-            if (ap == null)
+            for (var i = 0; i < Annotations.Elements.Count; i++)
             {
-                ap = new PdfDictionary(_document);
-                Elements[PdfAnnotation.Keys.AP] = ap;
+                var widget = Annotations.Elements[i];
+                if (widget == null)
+                    continue;
+
+                if ((widget.Flags & PdfAnnotationFlags.Invisible) != 0 || (widget.Flags & PdfAnnotationFlags.NoView) != 0)
+                    continue;
+
+                var rect = widget.Rectangle;
+                var xRect = new XRect(0, 0, rect.Width, rect.Height);
+                var form = (widget.Rotation == 90 || widget.Rotation == 270) && (widget.Flags & PdfAnnotationFlags.NoRotate) == 0 ? new XForm(_document, rect.Height, rect.Width) : new XForm(_document, xRect);
+                EnsureFonts(form);
+                using (var gfx = XGraphics.FromForm(form))
+                {
+                    var text = Text;
+                    if (MaxLength > 0)
+                        text = text.Substring(0, Math.Min(Text.Length, MaxLength));
+                    var format = TextAlign == TextAlignment.Left ? XStringFormats.CenterLeft : TextAlign == TextAlignment.Center ? XStringFormats.Center : XStringFormats.CenterRight;
+                    if (MultiLine)
+                        format.LineAlignment = XLineAlignment.Near;
+                    if (text.Length > 0)
+                    {
+                        if (widget.Rotation != 0 && (widget.Flags & PdfAnnotationFlags.NoRotate) == 0)
+                        {
+                            // I could not get this to work using gfx.Rotate/Translate Methods...
+                            const double deg2Rad = 0.01745329251994329576923690768489;  // PI/180
+                            var sr = Math.Sin(widget.Rotation * deg2Rad);
+                            var cr = Math.Cos(widget.Rotation * deg2Rad);
+                            // see PdfReference 1.7, Chapter 8.3.3 (Common Transformations)
+                            // TODO: Is this always correct ? I had only the chance to test this with a 90 degree rotation...
+                            form.PdfForm.Elements.SetMatrix(PdfFormXObject.Keys.Matrix, new XMatrix(cr, sr, -sr, cr, xRect.Width, 0));
+                            if (widget.Rotation == 90 || widget.Rotation == 270)
+                                xRect = new XRect(0, 0, rect.Height, rect.Width);
+                        }
+                        gfx.IntersectClip(xRect);       // TODO: Not sure, if we should clip AFTER drawing background and border... TESTME !
+                        // fill background
+                        if (!widget.BackColor.IsEmpty)
+                        {
+                            gfx.DrawRectangle(new XSolidBrush(widget.BackColor), xRect);
+                        }
+                        // draw border
+                        if (widget.BorderWidth > 0 && !widget.BorderColor.IsEmpty)
+                        {
+                            gfx.DrawRectangle(new XPen(widget.BorderColor, widget.BorderWidth), xRect);
+                        }
+                        // for Multiline fields, we use XTextFormatter to handle line-breaks and a fixed TextFormat (only TopLeft is supported)
+                        if (MultiLine)
+                        {
+                            var tf = new XTextFormatter(gfx);
+                            tf.DrawString(text, Font, new XSolidBrush(ForeColor), xRect, XStringFormats.TopLeft);
+                        }
+                        else
+                        {
+                            if (Combined && MaxLength > 0)
+                            {
+                                var combWidth = xRect.Width / MaxLength;
+                                var x = xRect.X;
+                                var cw = combWidth;
+                                var tb = new XSolidBrush(ForeColor);
+                                for (var ti = 0; ti < text.Length; ti++)
+                                {
+                                    var combRect = new XRect(x, xRect.Y, cw, xRect.Height);
+                                    gfx.DrawString(text[ti].ToString(), Font, tb, combRect, XStringFormats.Center);
+                                    x += cw;
+                                }
+                            }
+                            else
+                                gfx.DrawString(text, Font, new XSolidBrush(ForeColor), xRect, format);
+                        }
+                    }
+                }
+
+                form.DrawingFinished();
+                form.PdfForm.Elements.Add("/FormType", new PdfLiteral("1"));
+
+                // Get existing or create new appearance dictionary.
+                var ap = widget.Elements[PdfAnnotation.Keys.AP] as PdfDictionary;
+                if (ap == null)
+                {
+                    ap = new PdfDictionary(_document);
+                    widget.Elements[PdfAnnotation.Keys.AP] = ap;
+                }
+                widget.Elements.SetName(PdfAnnotation.Keys.AS, "/N");   // set appearance state
+
+                // Set XRef to normal state
+                ap.Elements["/N"] = form.PdfForm.Reference;
+
+                var xobj = form.PdfForm;
+                var s = xobj.Stream.ToString();
+                // Thank you Adobe: Without putting the content in 'EMC brackets'
+                // the text is not rendered by PDF Reader 9 or higher.
+                s = "/Tx BMC\n" + s + "\nEMC";
+                xobj.Stream.Value = new RawEncoding().GetBytes(s);
             }
-
-            // Set XRef to normal state
-            ap.Elements["/N"] = xobj.Reference;
-
-
-
-
-            //// HACK
-            //string m =
-            //"<?xpacket begin=\"﻿\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>" + '\n' +
-            //"<x:xmpmeta xmlns:x=\"adobe:ns:meta/\" x:xmptk=\"Adobe XMP Core 4.0-c321 44.398116, Tue Aug 04 2009 14:24:39\"> " + '\n' +
-            //"   <rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\"> " + '\n' +
-            //"      <rdf:Description rdf:about=\"\" " + '\n' +
-            //"            xmlns:pdf=\"http://ns.adobe.com/pdf/1.3/\"> " + '\n' +
-            //"         <pdf:Producer>PDFsharp 1.40.2150-g (www.pdfsharp.com) (Original: Powered By Crystal)</pdf:Producer> " + '\n' +
-            //"      </rdf:Description> " + '\n' +
-            //"      <rdf:Description rdf:about=\"\" " + '\n' +
-            //"            xmlns:xap=\"http://ns.adobe.com/xap/1.0/\"> " + '\n' +
-            //"         <xap:ModifyDate>2011-07-11T23:15:09+02:00</xap:ModifyDate> " + '\n' +
-            //"         <xap:CreateDate>2011-05-19T16:26:51+03:00</xap:CreateDate> " + '\n' +
-            //"         <xap:MetadataDate>2011-07-11T23:15:09+02:00</xap:MetadataDate> " + '\n' +
-            //"         <xap:CreatorTool>Crystal Reports</xap:CreatorTool> " + '\n' +
-            //"      </rdf:Description> " + '\n' +
-            //"      <rdf:Description rdf:about=\"\" " + '\n' +
-            //"            xmlns:dc=\"http://purl.org/dc/elements/1.1/\"> " + '\n' +
-            //"         <dc:format>application/pdf</dc:format> " + '\n' +
-            //"      </rdf:Description> " + '\n' +
-            //"      <rdf:Description rdf:about=\"\" " + '\n' +
-            //"            xmlns:xapMM=\"http://ns.adobe.com/xap/1.0/mm/\"> " + '\n' +
-            //"         <xapMM:DocumentID>uuid:68249d89-baed-4384-9a2d-fbf8ace75c45</xapMM:DocumentID> " + '\n' +
-            //"         <xapMM:InstanceID>uuid:3d5f2f46-c140-416f-baf2-7f9c970cef1d</xapMM:InstanceID> " + '\n' +
-            //"      </rdf:Description> " + '\n' +
-            //"   </rdf:RDF> " + '\n' +
-            //"</x:xmpmeta> " + '\n' +
-            //"                                                                          " + '\n' +
-            //"                                                                          " + '\n' +
-            //"                                                                          " + '\n' +
-            //"                                                                          " + '\n' +
-            //"                                                                          " + '\n' +
-            //"                                                                          " + '\n' +
-            //"                                                                          " + '\n' +
-            //"                                                                          " + '\n' +
-            //"                                                                          " + '\n' +
-            //"                                                                          " + '\n' +
-            //"<?xpacket end=\"w\"?>";
-
-            //PdfDictionary mdict = (PdfDictionary)_document.Internals.GetObject(new PdfObjectID(32));
-
-            //length = m.Length;
-            //stream = new byte[length];
-            //for (int idx = 0; idx < length; idx++)
-            //  stream[idx] = (byte)m[idx];
-
-            //mdict.Stream.Value = stream;
-
-
-
-
-#else
-            PdfRectangle rect = Elements.GetRectangle(PdfAnnotation.Keys.Rect);
-            XForm form = new XForm(_document, rect.Size);
-            XGraphics gfx = XGraphics.FromForm(form);
-
-            if (_backColor != XColor.Empty)
-                gfx.DrawRectangle(new XSolidBrush(BackColor), rect.ToXRect() - rect.Location);
-
-            string text = Text;
-            if (text.Length > 0)
-                gfx.DrawString(Text, Font, new XSolidBrush(ForeColor),
-                  rect.ToXRect() - rect.Location + new XPoint(2, 0), XStringFormats.TopLeft);
-
-            form.DrawingFinished();
-            form.PdfForm.Elements.Add("/FormType", new PdfLiteral("1"));
-
-            // Get existing or create new appearance dictionary.
-            PdfDictionary ap = Elements[PdfAnnotation.Keys.AP] as PdfDictionary;
-            if (ap == null)
-            {
-                ap = new PdfDictionary(_document);
-                Elements[PdfAnnotation.Keys.AP] = ap;
-            }
-
-            // Set XRef to normal state
-            ap.Elements["/N"] = form.PdfForm.Reference;
-
-            PdfFormXObject xobj = form.PdfForm;
-            string s = xobj.Stream.ToString();
-            // Thank you Adobe: Without putting the content in 'EMC brackets'
-            // the text is not rendered by PDF Reader 9 or higher.
-            s = "/Tx BMC\n" + s + "\nEMC";
-            xobj.Stream.Value = new RawEncoding().GetBytes(s);
-#endif
         }
 
         internal override void PrepareForSave()
         {
             base.PrepareForSave();
             RenderAppearance();
+        }
+
+        internal override void Flatten()
+        {
+            base.Flatten();
+
+            var text = Text;
+            if (MaxLength > 0)
+                text = text.Substring(0, Math.Min(Text.Length, MaxLength));
+            if (text.Length > 0)
+            {
+                //Debug.WriteLine(String.Format("Rendering Field {0} ({1}) -> {2}", FullyQualifiedName, ObjectID, text));
+
+                for (var i = 0; i < Annotations.Elements.Count; i++)
+                {
+                    var widget = Annotations.Elements[i];
+                    var rect = widget.Rectangle;
+                    if (!rect.IsEmpty)
+                    {
+                        using (var gfx = XGraphics.FromPdfPage(widget.Page))
+                        {
+                            // Note: Page origin [0,0] is bottom left !
+                            if (text.Length > 0)
+                            {
+                                var xRect = new XRect(rect.X1, widget.Page.Height.Point - rect.Y2, rect.Width, rect.Height);
+                                if (widget.Rotation != 0 && (widget.Flags & PdfAnnotationFlags.NoRotate) == 0)
+                                {
+                                    gfx.RotateAtTransform(-widget.Rotation, xRect.TopLeft);
+                                    if (widget.Rotation == 90 || widget.Rotation == 270)
+                                        xRect = new XRect(rect.X1 - rect.Height, widget.Page.Height.Point - rect.Y2, xRect.Height, xRect.Width);
+                                }
+                                var format = TextAlign == TextAlignment.Left ? XStringFormats.CenterLeft : TextAlign == TextAlignment.Center ? XStringFormats.Center : XStringFormats.CenterRight;
+                                gfx.IntersectClip(xRect);
+                                // for Multiline fields, we use XTextFormatter to handle line-breaks and a fixed TextFormat (only TopLeft is supported)
+                                if (MultiLine)
+                                {
+                                    var tf = new XTextFormatter(gfx);
+                                    tf.DrawString(text, Font, new XSolidBrush(ForeColor), xRect, XStringFormats.TopLeft);
+                                }
+                                else
+                                {
+                                    if (Combined && MaxLength > 0)
+                                    {
+                                        var combWidth = xRect.Width / MaxLength;
+                                        var x = xRect.X;
+                                        var cw = combWidth;
+                                        var tb = new XSolidBrush(ForeColor);
+                                        for (var ti = 0; ti < text.Length; ti++)
+                                        {
+                                            var combRect = new XRect(x, xRect.Y, cw, xRect.Height);
+                                            gfx.DrawString(text[ti].ToString(), Font, tb, combRect, XStringFormats.Center);
+                                            x += cw;
+                                        }
+                                    }
+                                    else
+                                        gfx.DrawString(text, Font, new XSolidBrush(ForeColor), xRect, format);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         /// <summary>

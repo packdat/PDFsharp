@@ -169,6 +169,11 @@ namespace PdfSharp.Pdf.Advanced
             }
         }
 
+        internal IEnumerable<PdfImportedObjectTable> ImportTables
+        {
+            get { return _forms.Values; }
+        }
+
         /// <summary>
         /// Map from Selector to PdfImportedObjectTable.
         /// </summary>

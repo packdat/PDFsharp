@@ -116,6 +116,19 @@ namespace PdfSharp.Pdf.Annotations
         }
 
         /// <summary>
+        /// Gets or sets the page for this Annotation
+        /// </summary>
+        public PdfPage Page
+        {
+            get
+            {
+                var pageRef = Elements.GetReference(PdfAnnotation.Keys.Page);
+                return pageRef != null && pageRef.Value is PdfDictionary ? pageRef.Value as PdfPage ?? new PdfPage((PdfDictionary)pageRef.Value) : null;
+            }
+            set { Elements.SetReference(PdfAnnotation.Keys.Page, value.Reference); }
+        }
+
+        /// <summary>
         /// Gets or sets the text label to be displayed in the title bar of the annotation’s
         /// pop-up window when open and active. By convention, this entry identifies
         /// the user who added the annotation.
@@ -252,7 +265,14 @@ namespace PdfSharp.Pdf.Annotations
             [KeyInfo(KeyType.TextString | KeyType.Optional)]
             public const string Contents = "/Contents";
 
-            // P
+            /// <summary>
+            /// (Optional except as noted below; PDF 1.3; not used in FDF files) 
+            /// An indirect reference to the page object with which this annotation is associated.
+            /// This entry shall be present in screen annotations associated with rendition actions 
+            /// (PDF 1.5; see 12.5.6.18, “Screen Annotations” and 12.6.4.13, “Rendition Actions”)
+            /// </summary>
+            [KeyInfo(KeyType = KeyType.Optional)]
+            public const string Page = "/P";
 
             /// <summary>
             /// (Optional; PDF 1.4) The annotation name, a text string uniquely identifying it
@@ -345,8 +365,16 @@ namespace PdfSharp.Pdf.Annotations
             public const string A = "/A";
 
             // AA
-            // StructParent
-            // OC
+
+            /// <summary>
+            /// (Optional; PDF 1.5) An optional content group or optional content membership dictionary
+            /// (see 8.11, “Optional Content”) specifying the optional content properties for the annotation.
+            /// Before the annotation is drawn, its visibility shall be determined based on this entry as well as the
+            /// annotation flags specified in the F entry (see 12.5.3, “Annotation Flags”).
+            /// If it is determined to be invisible, the annotation shall be skipped, as if it were not in the document.
+            /// </summary>
+            [KeyInfo("1.1", KeyType.Dictionary | KeyType.Optional)]
+            public const string OC = "/OC";
 
             // ----- Excerpt of entries specific to markup annotations ----------------------------------
 

@@ -27,7 +27,9 @@
 // DEALINGS IN THE SOFTWARE.
 #endregion
 
+using PdfSharp.Pdf.Annotations;
 using System;
+using System.Collections.Generic;
 
 namespace PdfSharp.Pdf.AcroForms
 {
@@ -47,7 +49,72 @@ namespace PdfSharp.Pdf.AcroForms
 
         internal PdfRadioButtonField(PdfDictionary dict)
             : base(dict)
-        { }
+        {
+            if (!Elements.ContainsKey(Keys.Opt))
+            {
+                var array = new PdfArray(_document);
+                foreach (var val in FieldValues)
+                    array.Elements.Add(new PdfName(val));
+                Elements.Add(Keys.Opt, array);
+            }
+        }
+
+        /// <summary>
+        /// Gets or sets the value of this field. This should be an item from the <see cref="FieldValues"/> list.
+        /// </summary>
+        public override PdfItem Value
+        {
+            get { return base.Value; }
+            set
+            {
+                base.Value = value;
+                var index = IndexInOptStrings(value.ToString());
+                SelectedIndex = index;
+            }
+        }
+
+        /// <summary>
+        /// Gets the name of the Field-Appearances for the RadioButtons in the "checked" state. (unchecked value should be "/Off")
+        /// Use this as the value to set the value for the whole RadioButton group.
+        /// </summary>
+        public IList<string> FieldValues
+        {
+            get
+            {
+                var values = new List<string>();
+                for (var i = 0; i < Annotations.Elements.Count; i++)
+                {
+                    var widget = Annotations.Elements[i];
+                    if (widget == null)
+                        continue;
+
+                    var ap = widget.Elements.GetDictionary(PdfAnnotation.Keys.AP);
+                    if (ap != null)
+                    {
+                        foreach (var dictName in new[] { "/N", "/D" }) // try both
+                        {
+                            var found = false;
+                            var n = ap.Elements.GetDictionary(dictName);
+                            if (n != null)
+                            {
+                                foreach (var key in n.Elements.Keys)
+                                {
+                                    if (key != "/Off")
+                                    {
+                                        values.Add(key);
+                                        found = true;
+                                        break;
+                                    }
+                                }
+                                if (found)
+                                    break;
+                            }
+                        }
+                    }
+                }
+                return values;
+            }
+        }
 
         /// <summary>
         /// Gets or sets the index of the selected radio button in a radio button group.
@@ -56,29 +123,52 @@ namespace PdfSharp.Pdf.AcroForms
         {
             get
             {
-                string value = Elements.GetString(Keys.V);
+                string value = Elements.GetString(PdfAcroField.Keys.V);
                 return IndexInOptStrings(value);
             }
             set
             {
-                PdfArray opt = Elements[Keys.Opt] as PdfArray;
-
-                if (opt == null)
-                    opt = Elements[Keys.Kids] as PdfArray;
-
+                var opt = Elements.GetArray(Keys.Opt);
                 if (opt != null)
                 {
                     int count = opt.Elements.Count;
-                    if (value < 0 || value >= count)
+                    if (value < -1 || value >= count)
                         throw new ArgumentOutOfRangeException("value");
-                    Elements.SetName(Keys.V, opt.Elements[value].ToString());
+                    var name = value == -1 ? "/Off" : opt.Elements[value].ToString();
+                    Elements.SetName(PdfAcroField.Keys.V, name);
+                    // first, set all annotations to /Off
+                    for (var i = 0; i < Annotations.Elements.Count; i++)
+                    {
+                        var widget = Annotations.Elements[i];
+                        if (widget != null)
+                            widget.Elements.SetName(PdfAnnotation.Keys.AS, "/Off");
+                    }
+                    if ((Flags & PdfAcroFieldFlags.RadiosInUnison) != 0)
+                    {
+                        // Then set all Widgets with the same Appearance to the checked state
+                        for (var i = 0; i < Annotations.Elements.Count; i++)
+                        {
+                            var widget = Annotations.Elements[i];
+                            if (name == opt.Elements[i].ToString() && widget != null)
+                                widget.Elements.SetName(PdfAnnotation.Keys.AS, name);
+                        }
+                    }
+                    else
+                    {
+                        if (value >= 0 && value < Annotations.Elements.Count)
+                        {
+                            var widget = Annotations.Elements[value];
+                            if (widget != null)
+                                widget.Elements.SetName(PdfAnnotation.Keys.AS, name);
+                        }
+                    }
                 }
             }
         }
 
-        int IndexInOptStrings(string value)
+        private int IndexInOptStrings(string value)
         {
-            PdfArray opt = Elements[Keys.Opt] as PdfArray;
+            var opt = Elements.GetArray(Keys.Opt);
             if (opt != null)
             {
                 int count = opt.Elements.Count;
@@ -93,6 +183,34 @@ namespace PdfSharp.Pdf.AcroForms
                 }
             }
             return -1;
+        }
+
+        internal override void Flatten()
+        {
+            base.Flatten();
+
+            for (var i = 0; i < Annotations.Elements.Count; i++)
+            {
+                var widget = Annotations.Elements[i];
+                if (widget.Page != null)
+                {
+                    var appearance = widget.Elements.GetDictionary(PdfAnnotation.Keys.AP);
+                    var selectedAppearance = widget.Elements.GetName(PdfAnnotation.Keys.AS);
+                    if (appearance != null && selectedAppearance != null)
+                    {
+                        // /N -> Normal appearance, /R -> Rollover appearance, /D -> Down appearance
+                        var apps = appearance.Elements.GetDictionary("/N");
+                        if (apps != null)
+                        {
+                            var appSel = apps.Elements.GetDictionary(selectedAppearance);
+                            if (appSel != null)
+                            {
+                                RenderContentStream(widget.Page, appSel.Stream, widget.Rectangle);
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         /// <summary>

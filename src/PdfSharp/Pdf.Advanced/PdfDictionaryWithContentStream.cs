@@ -93,6 +93,8 @@ namespace PdfSharp.Pdf.Advanced
         {
             pdfFont = _document.FontTable.GetFont(font);
             Debug.Assert(pdfFont != null);
+            if (font.FromDocument && !String.IsNullOrEmpty(font.DocumentFontName))
+                return font.DocumentFontName;
             string name = Resources.AddFont(pdfFont);
             return name;
         }

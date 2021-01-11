@@ -53,6 +53,17 @@ namespace PdfSharp.Pdf.Annotations
             Initialize();
         }
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="PdfTextAnnotation"/> with the specified dictionary.
+        /// </summary>
+        /// <param name="dict"></param>
+        public PdfTextAnnotation(PdfDictionary dict)
+            : base(dict)
+        {
+            if (dict.Elements.GetString(PdfAnnotation.Keys.Subtype) != "/Text")
+                throw new PdfSharpException("PdfTextAnnotation not initialized with the /Text Subtype");
+        }
+
         void Initialize()
         {
             Elements.SetName(Keys.Subtype, "/Text");

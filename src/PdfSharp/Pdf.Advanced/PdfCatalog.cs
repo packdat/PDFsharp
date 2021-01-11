@@ -186,6 +186,22 @@ namespace PdfSharp.Pdf.Advanced
                     _acroForm = (PdfAcroForm)Elements.GetValue(Keys.AcroForm);
                 return _acroForm;
             }
+            internal set
+            {
+                if (value != null)
+                {
+                    if (!value.IsIndirect)
+                        throw new InvalidOperationException("Setting the AcroForm requires an indirect object");
+                    Elements.SetReference(Keys.AcroForm, value);
+                }
+                else
+                {
+                    if (_acroForm.Reference != null)
+                        _document._irefTable.Remove(_acroForm.Reference);
+                    Elements.Remove(Keys.AcroForm);
+                }
+                _acroForm = value;
+            }
         }
         PdfAcroForm _acroForm;
 
@@ -220,6 +236,8 @@ namespace PdfSharp.Pdf.Advanced
                 if (Elements[Keys.PageMode] == null)
                     PageMode = PdfPageMode.UseOutlines;
                 _outline.PrepareForSave();
+                if (_acroForm != null)
+                    _acroForm.PrepareForSave();
             }
 
             // Clean up structure tree root.
